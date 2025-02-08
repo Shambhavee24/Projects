@@ -1,0 +1,166 @@
+import RPi.GPIO as GPIO
+import time
+import cv2
+import board
+import busio
+import adafruit_ccs811
+import Adafruit_DHT
+
+# Set up GPIO pins for motor driver L298N
+motor1_input1_pin = 5   # GPIO 5
+motor1_input2_pin = 6   # GPIO 6
+motor1_enable_pin = 13  # GPIO 13
+
+motor2_input1_pin = 19  # GPIO 19
+motor2_input2_pin = 26  # GPIO 26
+motor2_enable_pin = 21  # GPIO 21
+
+# Set GPIO numbering mode
+GPIO.setmode(GPIO.BCM)
+
+# Set up GPIO pins as outputs for motors
+GPIO.setup(motor1_input1_pin, GPIO.OUT)
+GPIO.setup(motor1_input2_pin, GPIO.OUT)
+GPIO.setup(motor1_enable_pin, GPIO.OUT)
+
+GPIO.setup(motor2_input1_pin, GPIO.OUT)
+GPIO.setup(motor2_input2_pin, GPIO.OUT)
+GPIO.setup(motor2_enable_pin, GPIO.OUT)
+
+# Initialize I2C bus for CCS811 sensor
+i2c_ccs811 = busio.I2C(board.SCL, board.SDA)
+ccs811 = adafruit_ccs811.CCS811(i2c_ccs811)
+
+# Initialize DHT22 sensor
+DHT_PIN = 17  # Same pin configuration as before
+DHT_SENSOR = Adafruit_DHT.DHT22
+
+def read_dht_sensor():
+    # Attempt to get a sensor reading
+    humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
+
+    if humidity is not None and temperature is not None:
+        return humidity, temperature
+    else:
+        return None, None
+
+# Function to run motors forward
+def motors_forward():
+    GPIO.output(motor1_input1_pin, GPIO.HIGH)
+    GPIO.output(motor1_input2_pin, GPIO.LOW)
+    GPIO.output(motor1_enable_pin, GPIO.HIGH)
+
+    GPIO.output(motor2_input1_pin, GPIO.HIGH)
+    GPIO.output(motor2_input2_pin, GPIO.LOW)
+    GPIO.output(motor2_enable_pin, GPIO.HIGH)
+
+# Function to run motors backward
+def motors_backward():
+    GPIO.output(motor1_input1_pin, GPIO.LOW)
+    GPIO.output(motor1_input2_pin, GPIO.HIGH)
+    GPIO.output(motor1_enable_pin, GPIO.HIGH)
+
+    GPIO.output(motor2_input1_pin, GPIO.LOW)
+    GPIO.output(motor2_input2_pin, GPIO.HIGH)
+    GPIO.output(motor2_enable_pin, GPIO.HIGH)
+
+# Function to turn left
+def motors_left():
+    GPIO.output(motor1_input1_pin, GPIO.HIGH)
+    GPIO.output(motor1_input2_pin, GPIO.LOW)
+    GPIO.output(motor1_enable_pin, GPIO.HIGH)
+
+    GPIO.output(motor2_input1_pin, GPIO.LOW)
+    GPIO.output(motor2_input2_pin, GPIO.HIGH)
+    GPIO.output(motor2_enable_pin, GPIO.HIGH)
+
+# Function to turn right
+def motors_right():
+    GPIO.output(motor1_input1_pin, GPIO.LOW)
+    GPIO.output(motor1_input2_pin, GPIO.HIGH)
+    GPIO.output(motor1_enable_pin, GPIO.HIGH)
+
+    GPIO.output(motor2_input1_pin, GPIO.HIGH)
+    GPIO.output(motor2_input2_pin, GPIO.LOW)
+    GPIO.output(motor2_enable_pin, GPIO.HIGH)
+
+# Function to stop motors
+def motors_stop():
+    GPIO.output(motor1_enable_pin, GPIO.LOW)
+    GPIO.output(motor2_enable_pin, GPIO.LOW)
+
+def main():
+    try:
+        # Open the default camera (index 0)
+        cap = cv2.VideoCapture(0)
+
+        # Check if the camera is opened successfully
+        if not cap.isOpened():
+            print("Error: Couldn't open the webcam.")
+            return
+
+        # Loop to continuously read frames from the webcam
+        while True:
+            # Capture frame-by-frame
+            ret, frame = cap.read()
+
+            # Check if the frame is retrieved successfully
+            if not ret:
+                print("Error: Couldn't retrieve frame.")
+                break
+
+            # Display the frame in a window named 'Webcam'
+            cv2.imshow('Webcam', frame)
+
+            # Check for the 'q' key pressed to exit the loop
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+            # Wait for the CCS811 sensor to be ready
+            while not ccs811.data_ready:
+                pass
+
+            # Read CO2 and TVOC levels from CCS811 sensor
+            co2 = ccs811.eco2
+            tvoc = ccs811.tvoc
+
+            # Print CCS811 sensor data
+            print("CCS811 Sensor - CO2:", co2, "ppm, TVOC:", tvoc, "ppb")
+
+            # Read DHT22 sensor data
+            humidity, temperature = read_dht_sensor()
+
+            # Print DHT22 sensor data
+            if humidity is not None and temperature is not None:
+                print("DHT22 Sensor - Temperature: {:.1f}°C, Humidity: {:.1f}%".format(temperature, humidity))
+            else:
+                print("Failed to retrieve DHT22 sensor data.")
+
+            # Turn left for 5 seconds
+            motors_left()
+            time.sleep(5)
+
+            # Turn right for 5 seconds
+            motors_right()
+            time.sleep(5)
+
+            # Move forward for 10 seconds
+            motors_forward()
+            time.sleep(10)
+
+            # Stop motors
+            motors_stop()
+
+    except KeyboardInterrupt:
+        # Clean up GPIO on keyboard interrupt
+        GPIO.cleanup()
+
+    finally:
+        # Clean up GPIO
+        GPIO.cleanup()
+        # Release the camera and close the OpenCV window
+        cap.release()
+        cv2.destroyAllWindows()
+
+if _name_ == "_main_":
+    main()
